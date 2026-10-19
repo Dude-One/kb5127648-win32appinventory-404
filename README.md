@@ -19,7 +19,10 @@ with no data, on every sync.
   Microsoft ships a migration.
 
 **Reported to Microsoft:** [Feedback Hub](https://aka.ms/AA13vnec). If you're affected, please upvote
-it there (opens in Feedback Hub on Windows).
+it there (opens in Feedback Hub on Windows). Also asked on
+[Microsoft Q&A](https://learn.microsoft.com/en-us/answers/questions/6042685/windows-11-mdm-win32appinventory-csp-get-returns-4)
+and [Tech Community](https://techcommunity.microsoft.com/discussions/microsoft-intune/kb5127648-breaks-the-win32appinventory-csp-404-inventory-cache-is-not-migrated/4565820);
+"I have the same question" or a reply with your build number helps there too.
 
 If your MDM product uses this CSP for desktop app inventory, your devices on this build quietly stop
 reporting installed software. Intune reads desktop apps through its own agent and WMI, which is
@@ -218,6 +221,7 @@ here with your build number and the output of step 1.
 - 2026-10-13: first seen
 - 2026-10-19: root cause found and the cache rebuild confirmed as a fix on the affected PC
 - 2026-10-19: reported to Microsoft through Feedback Hub: https://aka.ms/AA13vnec
+- 2026-10-19: asked on Microsoft Q&A and the Tech Community Intune board (links at the top)
 
 I'll update this when Microsoft responds or a later update fixes it.
 
