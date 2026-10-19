@@ -42,9 +42,29 @@ Things I ruled out:
 - **Logging.** Nothing about the failing Get shows up in the
   DeviceManagement-Enterprise-Diagnostics-Provider Admin or Operational logs.
 
-## Why I think it happens
+## What Windows logs when it fails
 
-I looked at the DLLs on an affected PC (strings and import tables only). Full notes in
+The event logs are empty for this, so I recorded an ETW trace while the PC ran an MDM sync
+([Trace-Win32AppInventory.ps1](Trace-Win32AppInventory.ps1), built-in `logman` and `tracerpt` only).
+Full write-up in [evidence/etw-trace.md](evidence/etw-trace.md), raw excerpt in
+[evidence/etw-excerpt.txt](evidence/etw-excerpt.txt).
+
+The MDM client passes its license and allow checks for the node. Then, 7 ms later on the same thread,
+the inventory code fails:
+
+```
+ERROR, Windows::Compat::Inventory::SqliteInvCache::CreateTable, 1966, Schema mismatch [0x80004005]
+ERROR, Windows::Compat::Inventory::SqliteInvCache::Initialize, 838, CreateTable failed [0x80004005]
+ERROR, TelCacheProvider::Initialize, 638, SqliteInvCache::Initialize failed [0x80004005]
+```
+
+The CSP is never actually called (no "CSP Node Operation" event, which the Store inventory right
+before it does get), and the server receives a 404. So the inventory library's SQLite cache doesn't
+match the schema the updated code expects, and nothing recreates it.
+
+## What the DLLs show
+
+I also looked at the DLLs on an affected PC (strings and import tables only). Full notes in
 [evidence/dll-analysis.md](evidence/dll-analysis.md).
 
 - `Win32AppInventoryCSP.dll` doesn't use WMI. It imports exactly two functions,
@@ -59,9 +79,11 @@ I looked at the DLLs on an affected PC (strings and import tables only). Full no
   Request of deprecated flag: GAI_FLAG_FILE_INFO [%#x]
   ```
 
-My best guess: application-info requests to `GetAppInventory` were deprecated in this build, the CSP
-still asks for them, the call fails, and the CSP turns that into a 404. I haven't proven it, since I
-don't have the old `aeinv.dll` to compare yet.
+  The new `aeinv.dll` also keeps the inventory in an embedded SQLite cache, which is the part that
+  fails in the trace above.
+
+Before the trace, my guess was the deprecated flags. The trace points at the SQLite cache instead.
+Both live in the same rebuilt `aeinv.dll`.
 
 ## Am I affected?
 

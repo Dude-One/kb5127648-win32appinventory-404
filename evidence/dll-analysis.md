@@ -70,9 +70,12 @@ Request of deprecated flag: GAI_FLAG_FILE_INFO [%#x]
 Someone's using GetAppInfo [%#x]
 ```
 
-## What I can't say yet
+It also has an embedded SQLite cache (`SqliteInvCache`, `TelCacheProvider`, "Using SQLite cache
+provider: %ls") next to the older `AepicInvCache`.
 
-These strings show the deprecation handling exists in the new `aeinv.dll`. They don't show that the
-CSP passes those flags, or that the old `aeinv.dll` (26200.9457) didn't have the same code. Comparing
-the two versions of both DLLs would settle it. If you have a PC still on 26200.9457, that comparison
-is very welcome.
+## What this does and doesn't show
+
+The strings show what code is in the new `aeinv.dll`, not which path the CSP takes. The ETW trace
+([etw-trace.md](etw-trace.md)) answers that: the failure is the SQLite cache's "Schema mismatch",
+not the deprecated flags. Comparing against the 26200.9457 versions of both DLLs would still be
+useful. If you have a PC still on that build, I'd love the comparison.

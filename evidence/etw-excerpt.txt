@@ -1,0 +1,24 @@
+2026-10-19 09:09:49.428  DM-Diag 402   tid 0x000059F8  "./Device/Vendor/MSFT/EnterpriseModernAppManagement/AppManagement/AppInventoryResults", 0x1, The operation completed successfully.
+2026-10-19 09:09:49.428  DM-Diag 403   tid 0x000059F8  "./Device/Vendor/MSFT/EnterpriseModernAppManagement/AppManagement/AppInventoryResults", 0x1, The operation completed successfully.
+2026-10-19 09:09:49.436  DM-Diag 401   tid 0x000059F8  "<enrollment>", "MDMFull", "EnterpriseModernAppManagement", "GetValue", "./Device/Vendor/MSFT/EnterpriseModernAppManagement/AppManagement/AppInventoryResults", "NULL", The operation completed successfully.
+2026-10-19 09:09:49.449  DM-Diag 401   tid 0x000059F8  "<enrollment>", "MDMFull", "EnterpriseModernAppManagement", "SetValue", "./Device/Vendor/MSFT/EnterpriseModernAppManagement/AppManagement/AppInventoryQuery", "NULL", The operation completed successfully.
+2026-10-19 09:09:49.453  DM-Diag 402   tid 0x000059F8  "./Vendor/MSFT/Win32AppInventory/Win32InstalledProgram", 0x1, The operation completed successfully.
+2026-10-19 09:09:49.453  DM-Diag 403   tid 0x000059F8  "./Vendor/MSFT/Win32AppInventory/Win32InstalledProgram", 0x1, The operation completed successfully.
+2026-10-19 09:09:49.460  AppExp  32767 tid 0x000059F8  "ERROR,Windows::Compat::Inventory::SqliteInvCache::CreateTable,1966,Schema mismatch [0x80004005] "
+2026-10-19 09:09:49.460  AppExp  32767 tid 0x000059F8  "ERROR,Windows::Compat::Inventory::SqliteInvCache::Initialize,838,CreateTable failed [0x80004005] "
+2026-10-19 09:09:49.460  AppExp  32767 tid 0x000059F8  "ERROR,TelCacheProvider::Initialize,638,SqliteInvCache::Initialize failed [0x80004005] "
+2026-10-19 09:09:53.537  AppExp  32767 tid 0x000059F8  "ERROR,Windows::Compat::Inventory::SqliteInvCache::CreateTable,1966,Schema mismatch [0x80004005] "
+2026-10-19 09:09:53.537  AppExp  32767 tid 0x000059F8  "ERROR,Windows::Compat::Inventory::SqliteInvCache::Initialize,838,CreateTable failed [0x80004005] "
+2026-10-19 09:09:53.537  AppExp  32767 tid 0x000059F8  "ERROR,TelCacheProvider::Initialize,638,SqliteInvCache::Initialize failed [0x80004005] "
+2026-10-19 09:12:02.581  DM-Diag 402   tid 0x000016FC  "./Device/Vendor/MSFT/EnterpriseModernAppManagement/AppManagement/AppInventoryResults", 0x1, The operation completed successfully.
+2026-10-19 09:12:02.581  DM-Diag 403   tid 0x000016FC  "./Device/Vendor/MSFT/EnterpriseModernAppManagement/AppManagement/AppInventoryResults", 0x1, The operation completed successfully.
+2026-10-19 09:12:02.591  DM-Diag 401   tid 0x000016FC  "<enrollment>", "MDMFull", "EnterpriseModernAppManagement", "GetValue", "./Device/Vendor/MSFT/EnterpriseModernAppManagement/AppManagement/AppInventoryResults", "NULL", The operation completed successfully.
+2026-10-19 09:12:02.603  DM-Diag 401   tid 0x000016FC  "<enrollment>", "MDMFull", "EnterpriseModernAppManagement", "SetValue", "./Device/Vendor/MSFT/EnterpriseModernAppManagement/AppManagement/AppInventoryQuery", "NULL", The operation completed successfully.
+2026-10-19 09:12:02.607  DM-Diag 402   tid 0x000016FC  "./Vendor/MSFT/Win32AppInventory/Win32InstalledProgram", 0x1, The operation completed successfully.
+2026-10-19 09:12:02.607  DM-Diag 403   tid 0x000016FC  "./Vendor/MSFT/Win32AppInventory/Win32InstalledProgram", 0x1, The operation completed successfully.
+2026-10-19 09:12:02.612  AppExp  32767 tid 0x000016FC  "ERROR,Windows::Compat::Inventory::SqliteInvCache::CreateTable,1966,Schema mismatch [0x80004005] "
+2026-10-19 09:12:02.612  AppExp  32767 tid 0x000016FC  "ERROR,Windows::Compat::Inventory::SqliteInvCache::Initialize,838,CreateTable failed [0x80004005] "
+2026-10-19 09:12:02.612  AppExp  32767 tid 0x000016FC  "ERROR,TelCacheProvider::Initialize,638,SqliteInvCache::Initialize failed [0x80004005] "
+2026-10-19 09:12:04.672  AppExp  32767 tid 0x000016FC  "ERROR,Windows::Compat::Inventory::SqliteInvCache::CreateTable,1966,Schema mismatch [0x80004005] "
+2026-10-19 09:12:04.672  AppExp  32767 tid 0x000016FC  "ERROR,Windows::Compat::Inventory::SqliteInvCache::Initialize,838,CreateTable failed [0x80004005] "
+2026-10-19 09:12:04.672  AppExp  32767 tid 0x000016FC  "ERROR,TelCacheProvider::Initialize,638,SqliteInvCache::Initialize failed [0x80004005] "
