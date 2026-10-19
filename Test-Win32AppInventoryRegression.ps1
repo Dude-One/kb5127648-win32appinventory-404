@@ -1,18 +1,18 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Checks whether this PC has the October 2026 change (KB5127648) that makes the Win32AppInventory
-    CSP answer 404.
+    Checks whether this PC has the KB5127648 inventory cache problem that makes the
+    Win32AppInventory CSP answer 404.
 
 .DESCRIPTION
     Read-only. It changes nothing on the PC.
 
-    The CSP itself can only be queried by an MDM server, so the real test is a Get of
-    ./Vendor/MSFT/Win32AppInventory/Win32InstalledProgram?list=StructData from your server
-    (404 = affected). This script checks what can be checked locally: the build, the update, the
-    DLL versions, whether the CSP is still registered, and whether the new aeinv.dll is there.
+    The cause: the updated aeinv.dll (10.0.26100.9711) expects a column called SentDetailedInv in
+    C:\Windows\AppCompat\Programs\InventoryApplication.db, but doesn't add it to a database created
+    by an earlier build. With the old table, the CSP fails and answers 404.
 
-    Run as Administrator to also count what WMI (Win32_InstalledWin32Program) sees.
+    Run as Administrator: the cache folder can only be read by administrators, and that check is
+    the one that decides.
 
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\Test-Win32AppInventoryRegression.ps1
@@ -22,67 +22,61 @@ param()
 
 $ErrorActionPreference = 'Continue'
 
-function Show([string]$label, $value) { '{0,-34} {1}' -f $label, $value }
+function Show([string]$label, $value) { '{0,-30} {1}' -f $label, $value }
 
 $cv = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
-$build = [int]$cv.CurrentBuild
-$ubr = [int]$cv.UBR
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator)
 
 ''
-'Win32AppInventory CSP check (KB5127648)'
-'---------------------------------------'
-Show 'Windows' ("{0} {1}, build {2}.{3}" -f $cv.EditionID, $cv.DisplayVersion, $build, $ubr)
-
+'Win32AppInventory / KB5127648 check'
+'-----------------------------------'
+Show 'Windows' ("{0} {1}, build {2}.{3}" -f $cv.EditionID, $cv.DisplayVersion, $cv.CurrentBuild, $cv.UBR)
 $kb = Get-HotFix -Id KB5127648 -ErrorAction SilentlyContinue
-Show 'KB5127648 installed' $(if ($kb) { "yes ($($kb.InstalledOn))" } else { 'no' })
+Show 'KB5127648' $(if ($kb) { "installed ($($kb.InstalledOn))" } else { 'not installed' })
 
-$sys32 = Join-Path $env:WINDIR 'System32'
-$cspDll = Join-Path $sys32 'Win32AppInventoryCSP.dll'
-$aeinvDll = Join-Path $sys32 'aeinv.dll'
-foreach ($f in $cspDll, $aeinvDll) {
-    if (Test-Path $f) {
-        $i = Get-Item $f
-        Show (Split-Path $f -Leaf) ("{0} (modified {1:yyyy-MM-dd HH:mm} UTC)" -f $i.VersionInfo.FileVersion, $i.LastWriteTimeUtc)
-    } else {
-        Show (Split-Path $f -Leaf) 'missing'
-    }
-}
+$aeinv = Join-Path $env:WINDIR 'System32\aeinv.dll'
+$aeinvVersion = $null
+if (Test-Path $aeinv) { $aeinvVersion = [version](((Get-Item $aeinv).VersionInfo.FileVersion -split ' ')[0]) }
+$newCode = $aeinvVersion -and $aeinvVersion -ge [version]'10.0.26100.9711'
+Show 'aeinv.dll' $(if ($aeinvVersion) { "$aeinvVersion" + $(if ($newCode) { ' (expects SentDetailedInv)' } else { ' (older)' }) } else { 'missing' })
 
-# The key name has a '.' segment, which the PowerShell registry provider drops, so use .NET.
-$hklm = [Microsoft.Win32.RegistryKey]::OpenBaseKey('LocalMachine', 'Registry64')
-$reg = $hklm.OpenSubKey('SOFTWARE\Microsoft\Provisioning\CSPs\.\Vendor\MSFT\Win32AppInventory')
-Show 'CSP registered' $(if ($reg) { "yes ($($reg.GetValue('')))" } else { 'no' })
-
-$marker = 'Request of deprecated flag: GAI_FLAG_APPLICATION_INFO'
-$hasMarker = $false
-if (Test-Path $aeinvDll) {
-    $hasMarker = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($aeinvDll)).Contains($marker)
-}
-Show 'aeinv.dll has deprecated-flag code' $(if ($hasMarker) { 'yes' } else { 'no' })
-
-if ($isAdmin) {
-    try {
-        $n = @(Get-CimInstance -ClassName Win32_InstalledWin32Program -ErrorAction Stop).Count
-        Show 'WMI Win32_InstalledWin32Program' "$n items"
-    } catch {
-        Show 'WMI Win32_InstalledWin32Program' "error: $($_.Exception.Message)"
-    }
+$db = Join-Path $env:WINDIR 'AppCompat\Programs\InventoryApplication.db'
+$schema = 'unknown'
+if (-not $isAdmin) {
+    Show 'InventoryApplication.db' 'not checked (run as Administrator)'
+} elseif (-not (Test-Path $db)) {
+    Show 'InventoryApplication.db' 'not there (Windows creates it on the next inventory run)'
+    $schema = 'none'
 } else {
-    Show 'WMI Win32_InstalledWin32Program' 'skipped (run as Administrator to check)'
+    $i = Get-Item $db -Force
+    Show 'InventoryApplication.db' ("{0} bytes, last written {1:yyyy-MM-dd HH:mm} UTC" -f $i.Length, $i.LastWriteTimeUtc)
+    try {
+        $fs = [IO.File]::Open($db, 'Open', 'Read', 'ReadWrite,Delete')
+        $buf = New-Object byte[] $fs.Length
+        [void]$fs.Read($buf, 0, $buf.Length)
+        $fs.Close()
+        $text = [Text.Encoding]::UTF8.GetString($buf)
+        $schema = if ($text -match 'CREATE TABLE InventoryApplication_0[^)]*SentDetailedInv') { 'new' } else { 'old' }
+        Show 'Cache table' $(if ($schema -eq 'new') { 'new layout (has SentDetailedInv)' } else { 'OLD layout (no SentDetailedInv)' })
+    } catch {
+        Show 'Cache table' "could not read: $($_.Exception.Message)"
+    }
 }
 
 ''
-$changedBuild = ($build -in 26100, 26200, 26300) -and ($ubr -ge 9711)
-if ($changedBuild) {
-    'RESULT: likely affected. This PC is on KB5127648 or later.'
-    'Your MDM server will most likely get a 404 for'
-    '  ./Vendor/MSFT/Win32AppInventory/Win32InstalledProgram?list=StructData'
-} elseif ($build -in 26100, 26200, 26300) {
-    'RESULT: not affected yet. This PC is on a build before KB5127648.'
+if ($newCode -and $schema -eq 'old') {
+    'RESULT: AFFECTED. The updated inventory code rejects this cache, so the CSP answers 404.'
+    'Fix: rename C:\Windows\AppCompat\Programs\InventoryApplication.db* and run an MDM sync'
+    '(see Rename-InventoryCache.ps1). Windows rebuilds it with the new layout.'
+} elseif ($newCode -and $schema -in 'new', 'none') {
+    'RESULT: OK. The cache matches the updated code, so the CSP should answer normally.'
+} elseif ($newCode) {
+    'RESULT: probably affected (KB5127648 or later). Run as Administrator to check the cache.'
+} elseif ($aeinvVersion) {
+    'RESULT: not affected yet. This PC is on a build before KB5127648. It will likely break after'
+    'that update unless a later fix migrates the cache.'
 } else {
-    'RESULT: unknown. This change was only seen on Windows 11 24H2/25H2/26H2 (builds 26100/26200/26300).'
+    'RESULT: unknown. aeinv.dll not found.'
 }
-'(Only a Get from your MDM server can confirm it.)'
 ''

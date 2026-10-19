@@ -1,94 +1,122 @@
 # KB5127648 breaks the Win32AppInventory CSP (Get returns 404)
 
-After the October 2026 cumulative update for Windows 11 (**KB5127648**, build **26200.9711**), Windows
-stopped answering this MDM query:
+After the October 2026 cumulative update for Windows 11 (**KB5127648**, build **26200.9711**), this MDM
+query stopped working:
 
 ```
 Get ./Vendor/MSFT/Win32AppInventory/Win32InstalledProgram?list=StructData
 ```
 
-Before the update it returned the full list of installed desktop programs. After it, the MDM client
-answers with a bare **404** and no data, every time.
+Before the update it returned every installed desktop program. After it, the device answers **404**
+with no data, on every sync.
 
-If your MDM product relies on this CSP for desktop app inventory, your Windows 11 devices on this
-build will quietly stop reporting installed software. As far as I can tell Intune doesn't depend on
-this CSP for desktop apps (its management extension reads WMI), which is probably why nobody has
-written about this yet.
+- **Cause:** the update added a column, `SentDetailedInv`, to Windows' installed-programs cache
+  `C:\Windows\AppCompat\Programs\InventoryApplication.db`, but it doesn't migrate a cache that already
+  exists. The new code finds the old table, logs `Schema mismatch` and gives up, and the CSP answers 404.
+- **Fix on a device:** rename that file and run an MDM sync. Windows rebuilds it with the new table and
+  the Get answers 200 again. Tested, see below.
+- **Not fixed for good:** every PC that had the cache before the update needs this once, until
+  Microsoft ships a migration.
 
-**Short version of the cause:** the update added a column (`SentDetailedInv`) to Windows' installed-app
-inventory cache, `C:\Windows\AppCompat\Programs\InventoryApplication.db`, but doesn't migrate the
-existing database. The new code sees the old table, logs "Schema mismatch" and gives up, and the CSP
-answers 404. Moving that file aside so Windows rebuilds it brings the inventory back (details below).
+If your MDM product uses this CSP for desktop app inventory, your devices on this build quietly stop
+reporting installed software. Intune reads desktop apps through its own agent and WMI, which is
+probably why this hasn't come up yet.
+
+## Check it yourself
+
+All three steps need an elevated PowerShell on an MDM-enrolled PC with KB5127648.
+
+**1. Is the cache on the old layout?** (read-only)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Test-Win32AppInventoryRegression.ps1
+```
+
+On an affected PC:
+
+```
+aeinv.dll                      10.0.26100.9711 (expects SentDetailedInv)
+InventoryApplication.db        ... bytes, last written <before the update> UTC
+Cache table                    OLD layout (no SentDetailedInv)
+
+RESULT: AFFECTED. The updated inventory code rejects this cache, so the CSP answers 404.
+```
+
+Look at the "last written" time too: on an affected PC it stops at the moment the update installed.
+
+**2. What does Windows log when the Get fails?** (ETW, built-in `logman` and `tracerpt` only)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Trace-Win32AppInventory.ps1
+```
+
+It starts a trace, triggers an MDM sync, waits 4 minutes and decodes the trace into `C:\Temp\poc\`.
+Search the decoded `mdm.csv` for the errors:
+
+```powershell
+Select-String -Path C:\Temp\poc\mdm.csv -Pattern 'Schema mismatch|CreateTable failed|SqliteInvCache::Initialize'
+```
+
+On an affected PC, right after the MDM client's license (402) and allow (403) checks for
+`./Vendor/MSFT/Win32AppInventory/Win32InstalledProgram`, on the same thread:
+
+```
+ERROR, Windows::Compat::Inventory::SqliteInvCache::CreateTable,1966,Schema mismatch [0x80004005]
+ERROR, Windows::Compat::Inventory::SqliteInvCache::Initialize,838,CreateTable failed [0x80004005]
+ERROR, TelCacheProvider::Initialize,638,SqliteInvCache::Initialize failed [0x80004005]
+```
+
+and no 401 (CSP Node Operation) for that node. The Store inventory node just before it gets its 401
+and succeeds.
+
+**3. Rebuild the cache and check again**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Rename-InventoryCache.ps1
+Get-Content C:\Temp\poc3\rename-test.txt
+```
+
+It renames `InventoryApplication.db*` to `*.bak-test` (nothing is deleted), runs two MDM syncs and logs
+the old and new table. Then run step 1 again: `Cache table` now says `new layout`, and your MDM server
+gets 200 for the Get.
 
 ## What I saw
 
-I work on Windows device management at Trio. Our server sends the Get above to every enrolled PC every
-few minutes. On October 13 two of our test PCs installed KB5127648, and each one flipped from 200 to
-404 at its first MDM session after the update:
+I work on Windows device management at Trio. Our server sends this Get to every enrolled PC every few
+minutes. On October 13 two test PCs installed KB5127648, and each flipped to 404 at its first MDM
+session after the update:
 
 | | Last answer with data | KB5127648 installed | First 404 |
 |---|---|---|---|
 | PC A | 21:13:09 UTC (57 programs) | 21:21:49 UTC | 21:28:12 UTC |
 | PC B | 22:06:42 UTC | ~22:21 UTC | 22:21:38 UTC |
 
-Both are still 404 six days later. Details in [evidence/timeline.md](evidence/timeline.md).
+Ruled out: our server (the command is byte for byte the same since July, nothing deployed that day),
+the rest of MDM (every other command in the same SyncML message still succeeds, including the Store
+inventory), missing apps (WMI `Win32_InstalledWin32Program` and the Uninstall keys still list them),
+and a removed CSP (still registered, DLL present). The event logs show nothing.
+Timeline: [evidence/timeline.md](evidence/timeline.md).
 
-Things I ruled out:
+## Root cause
 
-- **The server.** The command is byte for byte the same before and after, it hasn't changed since
-  July, and nothing was deployed that evening.
-- **The rest of MDM.** Every other command in the same SyncML message still succeeds, including the
-  Store/MSIX inventory (`EnterpriseModernAppManagement/AppManagement/AppInventoryQuery`) and the MSI
-  status nodes under `EnterpriseDesktopAppManagement`.
-- **Missing apps.** The programs are still installed and Windows still knows about them:
-  `Win32_InstalledWin32Program` (WMI) still returns them, and the Uninstall registry keys are full.
-- **A removed CSP.** It's still registered under
-  `HKLM\SOFTWARE\Microsoft\Provisioning\CSPs\.\Vendor\MSFT\Win32AppInventory` and its DLL is there.
-- **Logging.** Nothing about the failing Get shows up in the
-  DeviceManagement-Enterprise-Diagnostics-Provider Admin or Operational logs.
+`Win32AppInventoryCSP.dll` gets its data from `aeinv.dll` (`GetAppInventory`, `GetAppInfo2`). KB5127648
+replaced `aeinv.dll` with **10.0.26100.9711**, and that version keeps the inventory in SQLite databases
+under `C:\Windows\AppCompat\Programs\`. The one for installed programs is `InventoryApplication.db`.
 
-## What Windows logs when it fails
-
-The event logs are empty for this, so I recorded an ETW trace while the PC ran an MDM sync
-([Trace-Win32AppInventory.ps1](Trace-Win32AppInventory.ps1), built-in `logman` and `tracerpt` only).
-Full write-up in [evidence/etw-trace.md](evidence/etw-trace.md), raw excerpt in
-[evidence/etw-excerpt.txt](evidence/etw-excerpt.txt).
-
-The MDM client passes its license and allow checks for the node. Then, 7 ms later on the same thread,
-the inventory code fails:
+On PC A that file was last written at 21:13:06 UTC on October 13, 3 seconds before the last good answer
+and 8 minutes before the update finished, and never again. The other inventory databases next to it
+kept updating. Its table is one column short of what the new code creates:
 
 ```
-ERROR, Windows::Compat::Inventory::SqliteInvCache::CreateTable, 1966, Schema mismatch [0x80004005]
-ERROR, Windows::Compat::Inventory::SqliteInvCache::Initialize, 838, CreateTable failed [0x80004005]
-ERROR, TelCacheProvider::Initialize, 638, SqliteInvCache::Initialize failed [0x80004005]
+old (previous build):          ... "UserSid" TEXT, "Source" TEXT, ...
+new (aeinv.dll 10.0.26100.9711): ... "UserSid" TEXT, "SentDetailedInv" INTEGER, "Source" TEXT, ...
 ```
 
-The CSP is never actually called (no "CSP Node Operation" event, which the Store inventory right
-before it does get), and the server receives a 404. So the inventory library's SQLite cache doesn't
-match the schema the updated code expects, and nothing recreates it.
+Everything else in the table is identical. The new code compares the table, logs `Schema mismatch`
+and returns an error instead of adding the column or recreating the table. So the cache never
+changes, and the CSP fails on every request.
 
-## The cache, and the missing column
-
-A second trace of file opens ([Trace-InventoryCacheFiles.ps1](Trace-InventoryCacheFiles.ps1)) shows
-the cache: SQLite databases in `C:\Windows\AppCompat\Programs\`. The one for installed programs,
-`InventoryApplication.db`, was last written at 21:13:06 UTC on October 13. That's 3 seconds before the
-last good MDM answer and 8 minutes before the update finished. It hasn't changed since, while the
-other inventory databases next to it keep updating.
-
-Its table is missing one column the new code expects:
-
-```
-old (created by the previous build):  ... "UserSid" TEXT, "Source" TEXT, ...
-new (created by 10.0.26100.9711):     ... "UserSid" TEXT, "SentDetailedInv" INTEGER, "Source" TEXT, ...
-```
-
-Everything else in the table is identical. Full schemas and the test below in
-[evidence/cache-schema.md](evidence/cache-schema.md).
-
-## Proof: rebuild the cache and it works again
-
-On the affected PC I renamed `InventoryApplication.db` (nothing deleted) and started an MDM sync.
-Windows created a new database with the new table, and the very next answer to the same Get was:
+Proof: renaming the file on PC A made Windows recreate it with the new table, and the Get came back:
 
 | Session (UTC, Oct 19) | Status | Programs |
 |---|---|---|
@@ -97,74 +125,74 @@ Windows created a new database with the new table, and the very next answer to t
 | 09:28:57 | **200** | **58** |
 | 09:42:12 (next scheduled Get) | **200** | **58** |
 
-First good answer from that PC since October 13, and it stayed that way.
+Details: [evidence/etw-trace.md](evidence/etw-trace.md), [evidence/etw-excerpt.txt](evidence/etw-excerpt.txt),
+[evidence/cache-schema.md](evidence/cache-schema.md), [evidence/dll-analysis.md](evidence/dll-analysis.md).
 
-## What the DLLs show
+## Fix
 
-I also looked at the DLLs on an affected PC (strings and import tables only). Full notes in
-[evidence/dll-analysis.md](evidence/dll-analysis.md).
+### On an affected device (tested)
 
-- `Win32AppInventoryCSP.dll` doesn't use WMI. It imports exactly two functions,
-  `GetAppInventory` and `GetAppInfo2`, from **`aeinv.dll`**, and builds its answer from those.
-- The update replaced the whole application inventory stack (`Win32AppInventoryCSP.dll`,
-  `aeinv.dll`, `InventorySvc.dll`, `aepic.dll`, `invagent.dll`). Only **`aeinv.dll`** is at
-  **10.0.26100.9711**, the version of this update itself. The others are at .9549.
-- The new `aeinv.dll` has this inside `GetAppInventory`:
-
-  ```
-  Request of deprecated flag: GAI_FLAG_APPLICATION_INFO [%#x]
-  Request of deprecated flag: GAI_FLAG_FILE_INFO [%#x]
-  ```
-
-  The new `aeinv.dll` also keeps the inventory in an embedded SQLite cache, which is the part that
-  fails in the trace above.
-
-Before the trace, my guess was the deprecated flags. The trace points at the SQLite cache instead.
-Both live in the same rebuilt `aeinv.dll`.
-
-## Am I affected?
-
-Run [Test-Win32AppInventoryRegression.ps1](Test-Win32AppInventoryRegression.ps1) in PowerShell. It's
-read-only. As Administrator it also counts what WMI sees.
+As Administrator or SYSTEM:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Test-Win32AppInventoryRegression.ps1
-```
-
-The only real test is the Get itself from your MDM server: a 404 on the node above means you're
-affected. The script tells you if the PC is on a build that has the change.
-
-KB5127648 ships the same build number for 24H2 (26100.9711), 25H2 (26200.9711) and 26H2 (26300.9711).
-I've only seen it on 25H2.
-
-## Workaround
-
-**On the device** (as administrator or SYSTEM): move the old cache aside and let Windows rebuild it.
-
-```powershell
-Get-ChildItem C:\Windows\AppCompat\Programs -Filter 'InventoryApplication.db*' |
+Get-ChildItem C:\Windows\AppCompat\Programs -Force -Filter 'InventoryApplication.db*' |
     Rename-Item -NewName { $_.Name + '.old' }
 ```
 
-The next MDM sync recreates `InventoryApplication.db` with the new table and the Get answers 200
-again. [Rename-InventoryCache.ps1](Rename-InventoryCache.ps1) does the same thing with logging and
-two syncs. It's a cache Windows builds itself, but test it on one machine before rolling it out, and
-keep the `.old` files until you're happy.
+Then trigger an MDM sync (or wait for the next one). Windows recreates `InventoryApplication.db` with
+the new table and the Get answers 200. On PC A it stayed fixed on the following scheduled syncs. If a
+file is locked the rename fails and nothing changes; try again a minute later.
+[Rename-InventoryCache.ps1](Rename-InventoryCache.ps1) does the same with all-or-nothing renames,
+logging and two syncs.
 
-**On the MDM server:**
+It's a cache Windows builds itself, and the rebuilt one had the same 58 programs. Still, test on one
+machine first and keep the `.old` files for a while.
 
-- Don't treat the 404 as "no apps installed". Keep the last good inventory instead of wiping it.
-- If you can't run something on the device, get the software list another way on these builds
-  (your own agent reading the Uninstall keys, or WMI `Win32_InstalledWin32Program`).
+### For a fleet
+
+The device doesn't fix itself, and plain OMA-DM has no CSP that can rename this file, so the rename
+has to run through something that executes code on the device:
+
+- your own agent, if you have one;
+- Intune Remediations or any script runner: detect with step 1's check (old layout and aeinv.dll at
+  .9711 or later), remediate with the rename above;
+- a one-time scheduled task pushed by your existing tooling.
+
+On the server side, until devices are fixed:
+
+- Don't treat this 404 as "no apps installed". Keep the last good inventory instead of wiping it.
+- Get the list another way on these builds: your agent reading the Uninstall keys, or WMI
+  `Win32_InstalledWin32Program`.
+
+### What Microsoft needs to fix
+
+The real fix is in `aeinv.dll`: when the table is an older layout, either run
+`ALTER TABLE InventoryApplication_0 ADD COLUMN "SentDetailedInv" INTEGER`, or drop and rebuild the
+cache, since it's rebuildable data anyway. Either would make every affected PC recover on its own.
+
+I haven't tried adding the column by hand. The new code puts it in the middle of the table and
+`ALTER TABLE` can only add it at the end, so the check may still fail. Renaming the file is the tested
+route.
+
+### Is it fully solved?
+
+- **Root cause:** yes. The failing check, the missing column and the rebuild that fixes it are all shown
+  above on the same PC.
+- **On a device:** yes, the rename fixes it and it stays fixed.
+- **For good:** no. Every PC that had the cache before KB5127648 hits this, and stays broken until
+  someone renames the file or Microsoft adds the migration.
+- **Not proven yet:** I've rebuilt the cache on one PC (25H2). PC B shows the same 404 but I haven't
+  checked its cache. KB5127648 also ships 26100.9711 (24H2) and 26300.9711 (26H2), which I haven't
+  tested. Why some PCs might not be affected (for example a fresh install after the update) is a guess.
+
+If you're seeing this, open an issue with your build number and the output of step 1.
 
 ## Status
 
 - 2026-10-13: first seen
-- 2026-10-19: root cause found (the `SentDetailedInv` column the cache never gets), rebuilding the
-  cache confirmed as a workaround on the affected PC
+- 2026-10-19: root cause found and the cache rebuild confirmed as a fix on the affected PC
 - 2026-10-19: reported to Microsoft through Feedback Hub (link to be added)
 
-I'll update this when Microsoft responds or a later update fixes it. If you're seeing the same thing,
-open an issue with your build number so we can see how widespread it is.
+I'll update this when Microsoft responds or a later update fixes it.
 
 Amin Khabbazi
