@@ -24,7 +24,15 @@ probably why this hasn't come up yet.
 
 ## Check it yourself
 
-All three steps need an elevated PowerShell on an MDM-enrolled PC with KB5127648.
+All three steps need an elevated PowerShell on an MDM-enrolled PC with KB5127648, in a copy of this
+repo:
+
+```powershell
+git clone https://github.com/Dude-One/kb5127648-win32appinventory-404
+cd kb5127648-win32appinventory-404
+```
+
+(or Code > Download ZIP and extract it). Every script has help: `Get-Help .\<script>.ps1 -Full`.
 
 **1. Is the cache on the old layout?** (read-only)
 

@@ -1,4 +1,3 @@
-#Requires -Version 5.1
 <#
 .SYNOPSIS
     Records what Windows itself logs when the MDM client runs the Win32AppInventory Get.
@@ -20,6 +19,7 @@
 .PARAMETER WaitSeconds
     How long to record after starting the sync. Default 240.
 #>
+#Requires -Version 5.1
 [CmdletBinding()]
 param([int]$WaitSeconds = 240)
 

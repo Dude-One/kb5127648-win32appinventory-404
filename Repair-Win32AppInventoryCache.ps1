@@ -1,4 +1,3 @@
-#Requires -Version 5.1
 <#
 .SYNOPSIS
     Fixes the Win32AppInventory 404 after KB5127648 on one PC.
@@ -42,6 +41,7 @@
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\Repair-Win32AppInventoryCache.ps1
 #>
+#Requires -Version 5.1
 [CmdletBinding()]
 param(
     [switch]$DetectOnly = $false,

@@ -1,4 +1,3 @@
-#Requires -Version 5.1
 <#
 .SYNOPSIS
     Finds the SQLite inventory cache the failing Win32AppInventory Get opens, and reads its layout.
@@ -16,6 +15,7 @@
     Nothing on the PC is changed, apart from the temporary trace session (stopped at the end) and
     one normal MDM sync. Output: C:\Temp\poc2\files-summary.txt. The raw trace stays local.
 #>
+#Requires -Version 5.1
 [CmdletBinding()]
 param([int]$WaitSeconds = 75)
 

@@ -1,4 +1,3 @@
-#Requires -Version 5.1
 <#
 .SYNOPSIS
     Checks whether this PC has the KB5127648 inventory cache problem that makes the
@@ -17,6 +16,7 @@
 .EXAMPLE
     powershell -ExecutionPolicy Bypass -File .\Test-Win32AppInventoryRegression.ps1
 #>
+#Requires -Version 5.1
 [CmdletBinding()]
 param()
 
