@@ -57,8 +57,12 @@ if (-not $isAdmin) {
         [void]$fs.Read($buf, 0, $buf.Length)
         $fs.Close()
         $text = [Text.Encoding]::UTF8.GetString($buf)
-        $schema = if ($text -match 'CREATE TABLE InventoryApplication_0[^)]*SentDetailedInv') { 'new' } else { 'old' }
-        Show 'Cache table' $(if ($schema -eq 'new') { 'new layout (has SentDetailedInv)' } else { 'OLD layout (no SentDetailedInv)' })
+        $m = [regex]::Match($text, 'CREATE TABLE InventoryApplication_0 \([^)]*\)')
+        $schema = if (-not $m.Success) { 'unknown' } elseif ($m.Value -match '"SentDetailedInv"') { 'new' } else { 'old' }
+        Show 'Cache table' $(switch ($schema) {
+            'new' { 'new layout (has SentDetailedInv)' }
+            'old' { 'OLD layout (no SentDetailedInv)' }
+            default { 'table not found in the file' } })
     } catch {
         Show 'Cache table' "could not read: $($_.Exception.Message)"
     }

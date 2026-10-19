@@ -132,21 +132,34 @@ Details: [evidence/etw-trace.md](evidence/etw-trace.md), [evidence/etw-excerpt.t
 
 ### On an affected device (tested)
 
-As Administrator or SYSTEM:
+[Repair-Win32AppInventoryCache.ps1](Repair-Win32AppInventoryCache.ps1), as Administrator or SYSTEM:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Repair-Win32AppInventoryCache.ps1
+```
+
+```
+AFFECTED: InventoryApplication.db has the old layout (no SentDetailedInv) and aeinv.dll is 10.0.26100.9711.
+Renamed InventoryApplication.db to InventoryApplication.db.old-20261019-133905
+MDM sync started, waiting for Windows to rebuild the cache...
+FIXED: Windows rebuilt InventoryApplication.db with the new layout.
+```
+
+It only acts when the PC has the updated `aeinv.dll` and the old table, so it's safe to run on every
+PC and more than once. It renames the cache files all or nothing (if one is locked it puts everything
+back and changes nothing), deletes nothing, then starts an MDM sync and waits for Windows to rebuild the
+cache. `-DetectOnly` just reports. Exit code 0 means not affected or fixed, 1 means affected or failed.
+
+Or by hand:
 
 ```powershell
 Get-ChildItem C:\Windows\AppCompat\Programs -Force -Filter 'InventoryApplication.db*' |
     Rename-Item -NewName { $_.Name + '.old' }
 ```
 
-Then trigger an MDM sync (or wait for the next one). Windows recreates `InventoryApplication.db` with
-the new table and the Get answers 200. On PC A it stayed fixed on the following scheduled syncs. If a
-file is locked the rename fails and nothing changes; try again a minute later.
-[Rename-InventoryCache.ps1](Rename-InventoryCache.ps1) does the same with all-or-nothing renames,
-logging and two syncs.
-
-It's a cache Windows builds itself, and the rebuilt one had the same 58 programs. Still, test on one
-machine first and keep the `.old` files for a while.
+then trigger an MDM sync, or wait for the next one. On PC A the Get answered 200 right after the
+rebuild and stayed fixed on the following scheduled syncs. The rebuilt cache had the same 58
+programs. Still, test on one machine first and keep the `.old` files for a while.
 
 ### For a fleet
 
@@ -154,8 +167,8 @@ The device doesn't fix itself, and plain OMA-DM has no CSP that can rename this 
 has to run through something that executes code on the device:
 
 - your own agent, if you have one;
-- Intune Remediations or any script runner: detect with step 1's check (old layout and aeinv.dll at
-  .9711 or later), remediate with the rename above;
+- Intune Remediations or any script runner: the repair script with `-DetectOnly` (or `$DetectOnly`
+  defaulting to `$true` in the copy you upload) as detection, unchanged as remediation;
 - a one-time scheduled task pushed by your existing tooling.
 
 On the server side, until devices are fixed:
@@ -166,9 +179,10 @@ On the server side, until devices are fixed:
 
 ### What Microsoft needs to fix
 
-The real fix is in `aeinv.dll`: when the table is an older layout, either run
-`ALTER TABLE InventoryApplication_0 ADD COLUMN "SentDetailedInv" INTEGER`, or drop and rebuild the
-cache, since it's rebuildable data anyway. Either would make every affected PC recover on its own.
+The real fix is in `aeinv.dll`: when the table is an older layout, migrate it (copy it into a table
+with the new layout) or drop and rebuild it, since it's rebuildable data anyway. Either would make
+every affected PC recover on its own after the update. The change I'm suggesting, with the steps, is
+in [PROPOSED-FIX.md](PROPOSED-FIX.md).
 
 I haven't tried adding the column by hand. The new code puts it in the middle of the table and
 `ALTER TABLE` can only add it at the end, so the check may still fail. Renaming the file is the tested
@@ -195,4 +209,4 @@ If you're seeing this, open an issue with your build number and the output of st
 
 I'll update this when Microsoft responds or a later update fixes it.
 
-Amin Khabbazi
+Amin Khabbazi, thanks to [Opus 5.5](https://www.anthropic.com/claude)
