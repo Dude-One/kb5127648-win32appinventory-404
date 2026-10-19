@@ -1,10 +1,18 @@
-# Runs as SYSTEM (one-off scheduled task). Moves the Win32 app inventory cache aside so Windows
-# rebuilds it, triggers MDM syncs, and records what Windows recreated. Renames only, nothing is
-# deleted. Log: C:\Temp\poc3\rename-test.txt
+<#
+.SYNOPSIS
+    The test that proved the fix: moves the inventory cache aside, syncs twice, logs old and new table.
+
+.DESCRIPTION
+    Run as Administrator or SYSTEM. Renames InventoryApplication.db and its sidecar files to
+    *.bak-test (all or nothing, nothing is deleted), triggers two MDM syncs and logs the files and
+    both table layouts to C:\Temp\poc3\rename-test.txt. For fixing PCs, use
+    Repair-Win32AppInventoryCache.ps1 instead.
+#>
 $ErrorActionPreference = 'Continue'
 $dir = 'C:\Windows\AppCompat\Programs'
 $base = 'InventoryApplication.db'
 $log = 'C:\Temp\poc3\rename-test.txt'
+New-Item -ItemType Directory -Force (Split-Path $log) | Out-Null
 Remove-Item $log -Force -ErrorAction SilentlyContinue
 function Log([string]$s) { Add-Content -Path $log -Value $s -Encoding ascii }
 function Files { Get-ChildItem $dir -Force -Filter 'InventoryApplication.db*' -ErrorAction SilentlyContinue |
