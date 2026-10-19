@@ -18,6 +18,9 @@ with no data, on every sync.
 - **Not fixed for good:** every PC that had the cache before the update needs this once, until
   Microsoft ships a migration.
 
+**Reported to Microsoft:** [Feedback Hub](https://aka.ms/AA13vnec). If you're affected, please upvote
+it there (opens in Feedback Hub on Windows).
+
 If your MDM product uses this CSP for desktop app inventory, your devices on this build quietly stop
 reporting installed software. Intune reads desktop apps through its own agent and WMI, which is
 probably why this hasn't come up yet.
@@ -207,13 +210,14 @@ route.
   checked its cache. KB5127648 also ships 26100.9711 (24H2) and 26300.9711 (26H2), which I haven't
   tested. Why some PCs might not be affected (for example a fresh install after the update) is a guess.
 
-If you're seeing this, open an issue with your build number and the output of step 1.
+If you're seeing this, upvote the [Feedback Hub report](https://aka.ms/AA13vnec) and open an issue
+here with your build number and the output of step 1.
 
 ## Status
 
 - 2026-10-13: first seen
 - 2026-10-19: root cause found and the cache rebuild confirmed as a fix on the affected PC
-- 2026-10-19: reported to Microsoft through Feedback Hub (link to be added)
+- 2026-10-19: reported to Microsoft through Feedback Hub: https://aka.ms/AA13vnec
 
 I'll update this when Microsoft responds or a later update fixes it.
 
