@@ -15,6 +15,11 @@ build will quietly stop reporting installed software. As far as I can tell Intun
 this CSP for desktop apps (its management extension reads WMI), which is probably why nobody has
 written about this yet.
 
+**Short version of the cause:** the update added a column (`SentDetailedInv`) to Windows' installed-app
+inventory cache, `C:\Windows\AppCompat\Programs\InventoryApplication.db`, but doesn't migrate the
+existing database. The new code sees the old table, logs "Schema mismatch" and gives up, and the CSP
+answers 404. Moving that file aside so Windows rebuilds it brings the inventory back (details below).
+
 ## What I saw
 
 I work on Windows device management at Trio. Our server sends the Get above to every enrolled PC every
@@ -62,6 +67,38 @@ The CSP is never actually called (no "CSP Node Operation" event, which the Store
 before it does get), and the server receives a 404. So the inventory library's SQLite cache doesn't
 match the schema the updated code expects, and nothing recreates it.
 
+## The cache, and the missing column
+
+A second trace of file opens ([Trace-InventoryCacheFiles.ps1](Trace-InventoryCacheFiles.ps1)) shows
+the cache: SQLite databases in `C:\Windows\AppCompat\Programs\`. The one for installed programs,
+`InventoryApplication.db`, was last written at 21:13:06 UTC on October 13. That's 3 seconds before the
+last good MDM answer and 8 minutes before the update finished. It hasn't changed since, while the
+other inventory databases next to it keep updating.
+
+Its table is missing one column the new code expects:
+
+```
+old (created by the previous build):  ... "UserSid" TEXT, "Source" TEXT, ...
+new (created by 10.0.26100.9711):     ... "UserSid" TEXT, "SentDetailedInv" INTEGER, "Source" TEXT, ...
+```
+
+Everything else in the table is identical. Full schemas and the test below in
+[evidence/cache-schema.md](evidence/cache-schema.md).
+
+## Proof: rebuild the cache and it works again
+
+On the affected PC I renamed `InventoryApplication.db` (nothing deleted) and started an MDM sync.
+Windows created a new database with the new table, and the very next answer to the same Get was:
+
+| Session (UTC, Oct 19) | Status | Programs |
+|---|---|---|
+| 09:22:04, 09:22:18, 09:27:04 | 404 | 0 |
+| *09:27:08 cache renamed, 09:28:51 rebuilt by Windows* | | |
+| 09:28:57 | **200** | **58** |
+| 09:42:12 (next scheduled Get) | **200** | **58** |
+
+First good answer from that PC since October 13, and it stayed that way.
+
 ## What the DLLs show
 
 I also looked at the DLLs on an affected PC (strings and import tables only). Full notes in
@@ -102,15 +139,29 @@ I've only seen it on 25H2.
 
 ## Workaround
 
-There's no query I know of that brings the data back yet. If you run an MDM server:
+**On the device** (as administrator or SYSTEM): move the old cache aside and let Windows rebuild it.
+
+```powershell
+Get-ChildItem C:\Windows\AppCompat\Programs -Filter 'InventoryApplication.db*' |
+    Rename-Item -NewName { $_.Name + '.old' }
+```
+
+The next MDM sync recreates `InventoryApplication.db` with the new table and the Get answers 200
+again. [Rename-InventoryCache.ps1](Rename-InventoryCache.ps1) does the same thing with logging and
+two syncs. It's a cache Windows builds itself, but test it on one machine before rolling it out, and
+keep the `.old` files until you're happy.
+
+**On the MDM server:**
 
 - Don't treat the 404 as "no apps installed". Keep the last good inventory instead of wiping it.
-- Get the software list another way on these builds: your own agent reading the Uninstall keys, or
-  WMI `Win32_InstalledWin32Program` if you have code running on the device.
+- If you can't run something on the device, get the software list another way on these builds
+  (your own agent reading the Uninstall keys, or WMI `Win32_InstalledWin32Program`).
 
 ## Status
 
 - 2026-10-13: first seen
+- 2026-10-19: root cause found (the `SentDetailedInv` column the cache never gets), rebuilding the
+  cache confirmed as a workaround on the affected PC
 - 2026-10-19: reported to Microsoft through Feedback Hub (link to be added)
 
 I'll update this when Microsoft responds or a later update fixes it. If you're seeing the same thing,

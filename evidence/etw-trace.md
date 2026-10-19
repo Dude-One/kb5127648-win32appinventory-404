@@ -55,5 +55,5 @@ return a value, and the server receives a 404.
 - Windows' general inventory still works through WMI (`Win32_InstalledWin32Program`), so the data
   exists. Only the path the CSP uses breaks.
 
-I haven't found where the cache file lives (the path is built at runtime), so I haven't tried
-resetting it. If someone finds that deleting it fixes the CSP, please open an issue.
+A second trace found the cache file and the missing column, and rebuilding the cache fixed the CSP.
+See [cache-schema.md](cache-schema.md).
